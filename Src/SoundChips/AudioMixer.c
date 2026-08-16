@@ -532,18 +532,22 @@ void mixerSync(Mixer* mixer)
                     chanRight = mixer->channels[i].volumeRight * tmp;
                 }
 
-                mixer->channels[i].volCntLeft  += (chanLeft  > 0 ? chanLeft  : -chanLeft)  / 2048;
-                mixer->channels[i].volCntRight += (chanRight > 0 ? chanRight : -chanRight) / 2048;
+#ifndef __EMSCRIPTEN__
+                mixer->channels[i].volCntLeft  += (chanLeft  > 0 ? chanLeft  : -chanLeft)  >> 11;
+                mixer->channels[i].volCntRight += (chanRight > 0 ? chanRight : -chanRight) >> 11;
+#endif
 
                 left  += chanLeft;
                 right += chanRight;
             }
 
-            left  /= 4096;
-            right /= 4096;
+            left  >>= 12;
+            right >>= 12;
 
+#ifndef __EMSCRIPTEN__
             mixer->volCntLeft  += left  > 0 ? left  : -left;
             mixer->volCntRight += right > 0 ? right : -right;
+#endif
 
             if (left  >  32767) left  = 32767;
             if (left  < -32767) left  = -32767;
@@ -553,7 +557,9 @@ void mixerSync(Mixer* mixer)
             buffer[mixer->index++] = (Int16)left;
             buffer[mixer->index++] = (Int16)right;
 
+#ifndef __EMSCRIPTEN__
             mixer->volIndex++;
+#endif
         }
     }
     else
@@ -577,25 +583,33 @@ void mixerSync(Mixer* mixer)
                 else
                     chanLeft = mixer->channels[i].volumeLeft * *chBuff[i]++;
             
-                mixer->channels[i].volCntLeft  += (chanLeft > 0 ? chanLeft : -chanLeft) / 2048;
-                mixer->channels[i].volCntRight += (chanLeft > 0 ? chanLeft : -chanLeft) / 2048;
+#ifndef __EMSCRIPTEN__
+                mixer->channels[i].volCntLeft  += (chanLeft > 0 ? chanLeft : -chanLeft) >> 11;
+                mixer->channels[i].volCntRight += (chanLeft > 0 ? chanLeft : -chanLeft) >> 11;
+#endif
                 left  += chanLeft;
             }
 
-            left  /= 4096;
+            left  >>= 12;
 
+#ifndef __EMSCRIPTEN__
             mixer->volCntLeft  += left > 0 ? left : -left;
             mixer->volCntRight += left > 0 ? left : -left;
+#endif
 
             if (left  >  32767) left  = 32767;
             if (left  < -32767) left  = -32767;
 
             buffer[mixer->index++] = (Int16)left;
 
+#ifndef __EMSCRIPTEN__
             mixer->volIndex++;
+#endif
         }
     }
 
+#ifndef __EMSCRIPTEN__
+    /* VU meter finalization — only needed for desktop UI, not EmulatorJS */
     if (mixer->volIndex >= 441)
     {
         Int32 newVolumeLeft  = mixer->volCntLeft  / mixer->volIndex / 164;
@@ -641,6 +655,7 @@ void mixerSync(Mixer* mixer)
         }
         mixer->volIndex = 0;
     }
+#endif
 }
 
 void mixerSetEnable(Mixer* mixer, int enable)

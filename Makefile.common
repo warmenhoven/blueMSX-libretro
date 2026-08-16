@@ -343,3 +343,17 @@ ifeq ($(HAVE_WIN32_MSX_MANAGER), 1)
 	COREDEFINES  += -DHAVE_WIN32_MSX_MANAGER
 	SOURCES_CXX  += $(CORE_DIR)/Src/IoDevice/msxgr.cpp
 endif
+
+# Sound chips: FM synthesis and audio processing use extensive
+# floating-point math for sine tables, envelope generators, and
+# FM operators. IEEE 754 strict compliance is unnecessary for
+# emulating 8-bit audio hardware; -ffast-math enables faster
+# approximations and operation reordering.
+ifeq ($(platform), emscripten)
+$(CORE_DIR)/Src/SoundChips/Fmopl.o: CFLAGS += -ffast-math
+$(CORE_DIR)/Src/SoundChips/OpenMsxYM2413.o: CXXFLAGS += -ffast-math
+$(CORE_DIR)/Src/SoundChips/OpenMsxYM2413_2.o: CXXFLAGS += -ffast-math
+$(CORE_DIR)/Src/SoundChips/OpenMsxYMF262.o: CXXFLAGS += -ffast-math
+$(CORE_DIR)/Src/SoundChips/OpenMsxYMF278.o: CXXFLAGS += -ffast-math
+$(CORE_DIR)/Src/SoundChips/Moonsound.o: CXXFLAGS += -ffast-math
+endif

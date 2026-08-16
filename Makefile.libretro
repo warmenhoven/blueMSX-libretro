@@ -425,6 +425,14 @@ else ifneq (,$(findstring armv,$(platform)))
 else ifeq ($(platform), emscripten)
 	TARGET := $(TARGET_NAME)_libretro_$(platform).bc
 	STATIC_LINKING = 1
+	# Performance: LTO enables cross-TU devirtualization of CPU callbacks
+	# (readMemory, writeMemory, readIoPort, writeIoPort) which are
+	# call_indirect in WASM without it. Also enables dead-code elimination
+	# of unused ROM mappers.
+	CFLAGS += -flto
+	CXXFLAGS += -flto
+	# Disable time-trace debugging buffer (4KB per CPU + write per instruction)
+	COREDEFINES += -DTIME_TRACE_SIZE=0
 	# Clang 16+ promotes incompatible-pointer-types to errors by default.
 	# blueMSX's C89 codebase and its bundled zlib trigger this with
 	# unsigned long vs unsigned int pointer assignments.
@@ -677,8 +685,8 @@ ifeq ($(DEBUG), 1)
 	CFLAGS += -O0 -g
 	CXXFLAGS += -O0 -g
 else
-	CFLAGS += -O2
-	CXXFLAGS += -O2 -fno-exceptions -fno-rtti -DHAVE_STDINT_H -DNDEBUG
+	CFLAGS += -O3
+	CXXFLAGS += -O3 -fno-exceptions -fno-rtti -DHAVE_STDINT_H -DNDEBUG
 endif
 
 ifneq (,$(findstring msvc,$(platform)))
