@@ -1,4 +1,6 @@
 TARGET_NAME := bluemsx
+# Optimisation level for a release build; a platform block may raise it.
+OPTIMIZE    := -O2
 CFLAGS := -std=gnu89
 CXXFLAGS := -std=gnu++98
 GIT_VERSION := " $(shell git rev-parse --short HEAD || echo unknown)"
@@ -425,6 +427,7 @@ else ifneq (,$(findstring armv,$(platform)))
 else ifeq ($(platform), emscripten)
 	TARGET := $(TARGET_NAME)_libretro_$(platform).bc
 	STATIC_LINKING = 1
+	OPTIMIZE := -O3
 	# Performance: LTO enables cross-TU devirtualization of CPU callbacks
 	# (readMemory, writeMemory, readIoPort, writeIoPort) which are
 	# call_indirect in WASM without it. Also enables dead-code elimination
@@ -685,8 +688,8 @@ ifeq ($(DEBUG), 1)
 	CFLAGS += -O0 -g
 	CXXFLAGS += -O0 -g
 else
-	CFLAGS += -O3
-	CXXFLAGS += -O3 -fno-exceptions -fno-rtti -DHAVE_STDINT_H -DNDEBUG
+	CFLAGS += $(OPTIMIZE)
+	CXXFLAGS += $(OPTIMIZE) -fno-exceptions -fno-rtti -DHAVE_STDINT_H -DNDEBUG
 endif
 
 ifneq (,$(findstring msvc,$(platform)))
