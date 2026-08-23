@@ -55,15 +55,6 @@ struct MediaDb {
     CrcMap crcMap;
 };
 
-#ifdef __EMSCRIPTEN__
-// Lazy-load: defer XML parsing from startup to first lookup.
-// Saves ~200-500ms init time on low-end devices.
-static std::string mediaDbDeferredDir;
-static bool mediaDbLoaded = false;
-
-static void mediaDbDoLoad();
-#endif
-
 struct MediaType {
     MediaType(RomType rt, const string t, const string c = "", const string y = "", const string ct = "", const string r = "", string s = "") :
         romType(rt), title(t), company(c), year(y), country(ct), remark(r), start(s) {}
@@ -1116,12 +1107,6 @@ extern "C" void mediaDbLoad(const char* directory)
         casdb = new MediaDb;
     }
 
-#ifdef __EMSCRIPTEN__
-    // Defer XML parsing to first lookup call (lazy-load).
-    // This removes ~200-500ms from init time on low-end devices.
-    mediaDbDeferredDir = directory;
-    mediaDbLoaded = false;
-#else
     string path = directory;
     path += "/";
 
@@ -1135,27 +1120,7 @@ extern "C" void mediaDbLoad(const char* directory)
         }
         archGlobFree(glob);
     }
-#endif
 }
-
-#ifdef __EMSCRIPTEN__
-static void mediaDbDoLoad()
-{
-    if (mediaDbLoaded) return;
-    mediaDbLoaded = true;
-
-    string path = mediaDbDeferredDir + "/";
-    string searchPath = path + "*.xml";
-
-    ArchGlob* glob = archGlob(searchPath.c_str(), ARCH_GLOB_FILES);
-    if (glob != NULL) {
-        for (int i = 0; i < glob->count; i++) {
-            mediaDbAddFromXmlFile(glob->pathVector[i]);
-        }
-        archGlobFree(glob);
-    }
-}
-#endif
 
 extern "C" MediaType* mediaDbLookupRom(const void *buffer, int size) 
 {
@@ -1165,9 +1130,6 @@ extern "C" MediaType* mediaDbLookupRom(const void *buffer, int size)
     static MediaType defaultSg1000(ROM_SG1000, "Unknown SG-1000 rom");
     static MediaType defaultSc3000(ROM_SC3000, "Unknown SC-3000 rom");
 
-#ifdef __EMSCRIPTEN__
-    mediaDbDoLoad();
-#endif
     if (romdb == NULL) {
         return NULL;
     }
@@ -1196,9 +1158,6 @@ extern "C" MediaType* mediaDbLookupRom(const void *buffer, int size)
 
 extern "C" MediaType* mediaDbLookupDisk(const void *buffer, int size)
 {
-#ifdef __EMSCRIPTEN__
-    mediaDbDoLoad();
-#endif
     if (diskdb == NULL) {
         return NULL;
     }
@@ -1207,9 +1166,6 @@ extern "C" MediaType* mediaDbLookupDisk(const void *buffer, int size)
 
 extern "C" MediaType* mediaDbLookupCas(const void *buffer, int size)
 {
-#ifdef __EMSCRIPTEN__
-    mediaDbDoLoad();
-#endif
     if (casdb == NULL) {
         return NULL;
     }
