@@ -541,8 +541,8 @@ void mixerSync(Mixer* mixer)
                 right += chanRight;
             }
 
-            left  >>= 12;
-            right >>= 12;
+            left  /= 4096;
+            right /= 4096;
 
 #ifndef __EMSCRIPTEN__
             mixer->volCntLeft  += left  > 0 ? left  : -left;
@@ -590,7 +590,7 @@ void mixerSync(Mixer* mixer)
                 left  += chanLeft;
             }
 
-            left  >>= 12;
+            left  /= 4096;
 
 #ifndef __EMSCRIPTEN__
             mixer->volCntLeft  += left > 0 ? left : -left;
