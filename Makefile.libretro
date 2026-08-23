@@ -434,8 +434,6 @@ else ifeq ($(platform), emscripten)
 	# of unused ROM mappers.
 	CFLAGS += -flto
 	CXXFLAGS += -flto
-	# Disable time-trace debugging buffer (4KB per CPU + write per instruction)
-	COREDEFINES += -DTIME_TRACE_SIZE=0
 	# Clang 16+ promotes incompatible-pointer-types to errors by default.
 	# blueMSX's C89 codebase and its bundled zlib trigger this with
 	# unsigned long vs unsigned int pointer assignments.
