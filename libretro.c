@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <ctype.h>
 
+#include <compat/strl.h>
 #include <retro_miscellaneous.h>
 #include <streams/file_stream.h>
 #include <file/file_path.h>
@@ -1408,25 +1409,42 @@ bool retro_load_game(const struct retro_game_info *info)
 
    {
       /*
-       * C-BIOS fallback: machines auto-detected by file extension (e.g. "MSX2+" for .rom
-       * files) reference proprietary BIOS ROMs that users may not have. If the requested
-       * machine fails to load, cascade through C-BIOS variants which use freely
-       * redistributable ROMs included in the core's system files.
+       * C-BIOS fallback. A machine picked from the file extension rather than by
+       * the user can name a system whose BIOS ROMs are proprietary and absent, so
+       * fall back to the C-BIOS variants, whose ROMs ship with the core.
+       *
+       * machineIsValid() is what answers the question: machineCreate() only reads
+       * config.ini and succeeds whether or not the ROMs it names are on disk.
+       *
+       * Only for a machine this core chose (is_auto) - an explicit choice is left
+       * to fail visibly rather than silently becoming a different machine. Disk
+       * media is left alone too: no C-BIOS variant carries a disk ROM, so falling
+       * back would produce a machine that cannot read the image it was given.
        */
-      Machine* machine = machineCreate(properties->emulation.machineName);
-      if (!machine) {
-         if (log_cb) log_cb(RETRO_LOG_WARN, "Machine '%s' not found, trying C-BIOS fallback\n", properties->emulation.machineName);
-         strncpy(properties->emulation.machineName, "MSX2+ - C-BIOS", sizeof(properties->emulation.machineName) - 1);
-         machine = machineCreate(properties->emulation.machineName);
+      Machine* machine;
+
+      if (is_auto && media_type != MEDIA_TYPE_DISK && media_type != MEDIA_TYPE_DISK_BUNDLE
+            && !machineIsValid(properties->emulation.machineName, 1))
+      {
+         static const char* const cbios[] = {
+            "MSX2+ - C-BIOS", "MSX2 - C-BIOS", "MSX - C-BIOS"
+         };
+         unsigned n;
+
+         for (n = 0; n < sizeof(cbios) / sizeof(cbios[0]); n++)
+         {
+            if (!machineIsValid(cbios[n], 1))
+               continue;
+            if (log_cb)
+               log_cb(RETRO_LOG_INFO, "[blueMSX]: '%s' is incomplete, falling back to '%s'.\n",
+                     properties->emulation.machineName, cbios[n]);
+            strlcpy(properties->emulation.machineName, cbios[n],
+                  sizeof(properties->emulation.machineName));
+            break;
+         }
       }
-      if (!machine) {
-         strncpy(properties->emulation.machineName, "MSX2 - C-BIOS", sizeof(properties->emulation.machineName) - 1);
-         machine = machineCreate(properties->emulation.machineName);
-      }
-      if (!machine) {
-         strncpy(properties->emulation.machineName, "MSX - C-BIOS", sizeof(properties->emulation.machineName) - 1);
-         machine = machineCreate(properties->emulation.machineName);
-      }
+
+      machine = machineCreate(properties->emulation.machineName);
       if (!machine)
          return false;
       boardSetMachine(machine);
