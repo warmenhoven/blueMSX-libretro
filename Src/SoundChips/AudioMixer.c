@@ -557,9 +557,7 @@ void mixerSync(Mixer* mixer)
             buffer[mixer->index++] = (Int16)left;
             buffer[mixer->index++] = (Int16)right;
 
-#ifndef __EMSCRIPTEN__
             mixer->volIndex++;
-#endif
         }
     }
     else
@@ -602,14 +600,10 @@ void mixerSync(Mixer* mixer)
 
             buffer[mixer->index++] = (Int16)left;
 
-#ifndef __EMSCRIPTEN__
             mixer->volIndex++;
-#endif
         }
     }
 
-#ifndef __EMSCRIPTEN__
-    /* VU meter finalization — only needed for desktop UI, not EmulatorJS */
     if (mixer->volIndex >= 441)
     {
         Int32 newVolumeLeft  = mixer->volCntLeft  / mixer->volIndex / 164;
@@ -655,7 +649,6 @@ void mixerSync(Mixer* mixer)
         }
         mixer->volIndex = 0;
     }
-#endif
 }
 
 void mixerSetEnable(Mixer* mixer, int enable)
