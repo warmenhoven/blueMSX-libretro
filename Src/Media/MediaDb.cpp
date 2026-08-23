@@ -37,8 +37,10 @@ extern "C" {
 #include "Language.h"
 }
 
-#include "tinyxml.h"
+#include <formats/rxml.h>
+#include <formats/rxml_stream.h>
 #include "Sha1.h"
+#include <string.h>
 #include <string>
 #include <map>
 
@@ -276,20 +278,49 @@ RomType mediaDbStringToType(const char* romName)
 }
 
 
-static string mediaDbGetRemarks(TiXmlElement* dmp)
+/* Element text arrives exactly as the file spells it, and the databases
+   indent and wrap freely, so collapse every whitespace run to a single
+   space and drop the ends. A value here goes on to key a hash lookup or
+   to reach the user interface, and neither wants the source layout. */
+static string mediaDbText(rxml_node_t* node)
+{
+    const char* p = node->data;
+    string      text;
+
+    if (p == NULL) {
+        return text;
+    }
+
+    while (*p != '\0') {
+        if (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
+            while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
+                p++;
+            }
+            if (*p != '\0' && text.length()) {
+                text += ' ';
+            }
+            continue;
+        }
+        text += *p++;
+    }
+
+    return text;
+}
+
+static string mediaDbGetRemarks(rxml_node_t* dmp)
 {
     string remark;
 
-    for (TiXmlElement* it = dmp->FirstChildElement(); it != NULL; it = it->NextSiblingElement()) {
-        if (strcmp(it->Value(), "remark") == 0) {
-            for (TiXmlElement* i = it->FirstChildElement(); i != NULL; i = i->NextSiblingElement()) {
-                if (strcmp(i->Value(), "text") == 0) {
-                    TiXmlNode* name = i->FirstChild();
-                    if (name != NULL) {
+    for (rxml_node_t* it = dmp->children; it != NULL; it = it->next) {
+        if (strcmp(it->name, "remark") == 0) {
+            for (rxml_node_t* i = it->children; i != NULL; i = i->next) {
+                if (strcmp(i->name, "text") == 0) {
+                    string text = mediaDbText(i);
+                    if (text.length()) {
                         if (remark.length()) {
                             remark += "\n";
                         }
-                        remark += name->Value();
+                        remark += text;
                     }
                 }
             }
@@ -299,20 +330,20 @@ static string mediaDbGetRemarks(TiXmlElement* dmp)
     return remark;
 }
 
-static string mediaDbGetStart(TiXmlElement* dmp)
+static string mediaDbGetStart(rxml_node_t* dmp)
 {
     string start;
 
-    for (TiXmlElement* it = dmp->FirstChildElement(); it != NULL; it = it->NextSiblingElement()) {
-        if (strcmp(it->Value(), "start") == 0) {
-            for (TiXmlElement* i = it->FirstChildElement(); i != NULL; i = i->NextSiblingElement()) {
-                if (strcmp(i->Value(), "text") == 0) {
-                    TiXmlNode* name = i->FirstChild();
-                    if (name != NULL) {
+    for (rxml_node_t* it = dmp->children; it != NULL; it = it->next) {
+        if (strcmp(it->name, "start") == 0) {
+            for (rxml_node_t* i = it->children; i != NULL; i = i->next) {
+                if (strcmp(i->name, "text") == 0) {
+                    string text = mediaDbText(i);
+                    if (text.length()) {
                         if (start.length()) {
                             start += "\n";
                         }
-                        start += name->Value();
+                        start += text;
                     }
                 }
             }
@@ -321,22 +352,22 @@ static string mediaDbGetStart(TiXmlElement* dmp)
     return start;
 }
 
-static void mediaDbAddItem(MediaDb* mediaDb, TiXmlElement* dmp, const MediaType& mediaType)
+static void mediaDbAddItem(MediaDb* mediaDb, rxml_node_t* dmp, const MediaType& mediaType)
 {
-    for (TiXmlElement* it = dmp->FirstChildElement(); it != NULL; it = it->NextSiblingElement()) {
-        if (strcmp(it->Value(), "hash") == 0) {
-            const char* type = it->Attribute("algo");
+    for (rxml_node_t* it = dmp->children; it != NULL; it = it->next) {
+        if (strcmp(it->name, "hash") == 0) {
+            const char* type = rxml_node_attrib(it, "algo");
             if (type != NULL) {
+                string hash = mediaDbText(it);
+                if (hash.length() == 0) {
+                    continue;
+                }
                 if (strcmp(type, "sha1") == 0) {
-                    TiXmlNode* hash = it->FirstChild();
-                    string sha1(hash->Value());
-                    mediaDb->sha1Map[sha1] = new MediaType(mediaType);
-//                    if (mediaDb == casdb) printf("Adding: %s: %s\n", mediaType.title.c_str(), sha1.c_str());
+                    mediaDb->sha1Map[hash] = new MediaType(mediaType);
                 }
                 if (strcmp(type, "crc32") == 0) {
                     UInt32 crc32;
-                    TiXmlNode* hash = it->FirstChild();
-                    const char *p = hash->Value();
+                    const char* p = hash.c_str();
                     if (scan_hex(&p, &crc32)) {
                         mediaDb->crcMap[crc32] = new MediaType(mediaType);
                     }
@@ -346,21 +377,21 @@ static void mediaDbAddItem(MediaDb* mediaDb, TiXmlElement* dmp, const MediaType&
     }
 }
 
-static void mediaDbAddDump(TiXmlElement* dmp, 
+static void mediaDbAddDump(rxml_node_t* dmp,
                            string& title,
                            string& company,
                            string& country,
                            string& year,
                            string& system)
 {
-    if (strcmp(dmp->Value(), "megarom") == 0 || strcmp(dmp->Value(), "systemrom") == 0 || strcmp(dmp->Value(), "rom") == 0) {
-        RomType romType = strcmp(dmp->Value(), "rom") == 0 ? ROM_PLAIN : ROM_UNKNOWN;
+    if (strcmp(dmp->name, "megarom") == 0 || strcmp(dmp->name, "systemrom") == 0 || strcmp(dmp->name, "rom") == 0) {
+        RomType romType = strcmp(dmp->name, "rom") == 0 ? ROM_PLAIN : ROM_UNKNOWN;
 
-        for (TiXmlElement* it = dmp->FirstChildElement(); it != NULL; it = it->NextSiblingElement()) {
-            if (strcmp(it->Value(), "type") == 0) {
-                TiXmlNode* name = it->FirstChild();
-                if (name != NULL) {
-                    romType = mediaDbStringToType(name->Value());
+        for (rxml_node_t* it = dmp->children; it != NULL; it = it->next) {
+            if (strcmp(it->name, "type") == 0) {
+                string type = mediaDbText(it);
+                if (type.length()) {
+                    romType = mediaDbStringToType(type.c_str());
                 }
             }
         }
@@ -395,20 +426,20 @@ static void mediaDbAddDump(TiXmlElement* dmp,
 
         // For standard roms, a start tag is used to specify start address
         if (romType == ROM_STANDARD) {
-            for (TiXmlElement* it = dmp->FirstChildElement(); it != NULL; it = it->NextSiblingElement()) {
-                if (strcmp(it->Value(), "start") == 0) {
-                    TiXmlNode* name = it->FirstChild();
-                    if (name != NULL) {
-                        if (strcmp(name->Value(), "0x0000") == 0) {
+            for (rxml_node_t* it = dmp->children; it != NULL; it = it->next) {
+                if (strcmp(it->name, "start") == 0) {
+                    string start = mediaDbText(it);
+                    if (start.length()) {
+                        if (start == "0x0000") {
                             romType = ROM_STANDARD;
                         }
-                        if (strcmp(name->Value(), "0x4000") == 0) {
+                        if (start == "0x4000") {
                             romType = ROM_0x4000;
                         }
-                        if (strcmp(name->Value(), "0x8000") == 0) {
+                        if (start == "0x8000") {
                             romType = ROM_BASIC;
                         }
-                        if (strcmp(name->Value(), "0xC000") == 0) {
+                        if (start == "0xC000") {
                             romType = ROM_0xC000;
                         }
                     }
@@ -421,14 +452,12 @@ static void mediaDbAddDump(TiXmlElement* dmp,
         mediaDbAddItem(romdb, dmp, MediaType(romType, title, company, year, country, remark));
     }
 
-    if (strcmp(dmp->Value(), "sccpluscart") == 0) {
+    if (strcmp(dmp->name, "sccpluscart") == 0) {
         RomType romType = ROM_SCC;
-        
 
-        for (TiXmlElement* it = dmp->FirstChildElement(); it != NULL; it = it->NextSiblingElement()) {
-            if (strcmp(it->Value(), "boot") == 0) {
-                TiXmlNode* name = it->FirstChild();
-                if (name != NULL && strcmp(name->Value(), "scc+") == 0) {
+        for (rxml_node_t* it = dmp->children; it != NULL; it = it->next) {
+            if (strcmp(it->name, "boot") == 0) {
+                if (mediaDbText(it) == "scc+") {
                     romType = ROM_SCCPLUS;
                 }
             }
@@ -439,13 +468,13 @@ static void mediaDbAddDump(TiXmlElement* dmp,
         mediaDbAddItem(romdb, dmp, MediaType(romType, title, company, year, country, remark));
     }
 
-    if (strcmp(dmp->Value(), "cas") == 0) {
+    if (strcmp(dmp->name, "cas") == 0) {
         string start = mediaDbGetStart(dmp);
         string remark = mediaDbGetRemarks(dmp);
 
-        for (TiXmlElement* itt = dmp->FirstChildElement(); itt != NULL; itt = itt->NextSiblingElement()) {
-            if (strcmp(itt->Value(), "format") == 0) {
-                const char* type = itt->Attribute("type");
+        for (rxml_node_t* itt = dmp->children; itt != NULL; itt = itt->next) {
+            if (strcmp(itt->name, "format") == 0) {
+                const char* type = rxml_node_attrib(itt, "type");
                 if (type != NULL && strcmp(type, "cas") == 0) {
                     mediaDbAddItem(casdb, itt, MediaType(ROM_UNKNOWN, title, company, year, country, remark, start));
                 }
@@ -453,13 +482,13 @@ static void mediaDbAddDump(TiXmlElement* dmp,
         }
     }
 
-    if (strcmp(dmp->Value(), "dsk") == 0) {
+    if (strcmp(dmp->name, "dsk") == 0) {
         string start = mediaDbGetStart(dmp);
         string remark = mediaDbGetRemarks(dmp);
 
-        for (TiXmlElement* itt = dmp->FirstChildElement(); itt != NULL; itt = itt->NextSiblingElement()) {
-            if (strcmp(itt->Value(), "format") == 0) {
-                const char* type = itt->Attribute("type");
+        for (rxml_node_t* itt = dmp->children; itt != NULL; itt = itt->next) {
+            if (strcmp(itt->name, "format") == 0) {
+                const char* type = rxml_node_attrib(itt, "type");
                 if (type != NULL && strcmp(type, "dsk") == 0) {
                     mediaDbAddItem(diskdb, itt, MediaType(ROM_UNKNOWN, title, company, year, country, remark, start));
                 }
@@ -476,20 +505,23 @@ static void mediaDbAddFromXmlFile(const char* fileName)
         return;
     }
 
-    TiXmlDocument doc(fileName);
+    /* RXML_OPT_STRICT_EOF: a database left truncated by an interrupted
+       download or a full filesystem is rejected outright, rather than
+       registering the entries that happen to precede the cut. */
+    rxml_document_t* doc = rxml_load_document_filestream_opts(fileName,
+            RXML_OPT_STRICT_EOF, NULL);
+    if (doc == NULL) {
+        return;
+    }
 
-    doc.LoadFile();
-    if (doc.Error()) {
+    rxml_node_t* root = rxml_root_node(doc);
+    if (root == NULL || strcmp(root->name, rootTag) != 0) {
+        rxml_free_document(doc);
         return;
     }
-    
-    TiXmlElement* root = doc.RootElement();
-    if (root == NULL || strcmp(root->Value(), rootTag) != 0) {
-        return;
-    }
-    
-    for (TiXmlElement* sw = root->FirstChildElement(); sw != NULL; sw = sw->NextSiblingElement()) {
-        if (strcmp(sw->Value(), "software") != 0) {
+
+    for (rxml_node_t* sw = root->children; sw != NULL; sw = sw->next) {
+        if (strcmp(sw->name, "software") != 0) {
             continue;
         }
 
@@ -498,52 +530,37 @@ static void mediaDbAddFromXmlFile(const char* fileName)
         string country;
         string  year;
         string  system;
-        
-        TiXmlElement* item;
 
-        for (item = sw->FirstChildElement(); item != NULL; item = item->NextSiblingElement()) {
-            if (strcmp(item->Value(), "system") == 0) {
-                TiXmlNode* name = item->FirstChild();
-                if (name != NULL) {
-                    system = name->Value();
-                }
+        rxml_node_t* item;
+
+        for (item = sw->children; item != NULL; item = item->next) {
+            if (strcmp(item->name, "system") == 0) {
+                system = mediaDbText(item);
             }
-            if (strcmp(item->Value(), "title") == 0) {
-                TiXmlNode* name = item->FirstChild();
-                if (name != NULL) {
-                    title = name->Value();
-                }
+            if (strcmp(item->name, "title") == 0) {
+                title = mediaDbText(item);
             }
-            if (strcmp(item->Value(), "company") == 0) {
-                TiXmlNode* name = item->FirstChild();
-                if (name != NULL) {
-                    company = name->Value();
-                }
+            if (strcmp(item->name, "company") == 0) {
+                company = mediaDbText(item);
             }
-            if (strcmp(item->Value(), "country") == 0) {
-                TiXmlNode* name = item->FirstChild();
-                if (name != NULL) {
-                    country = parseCountryCode(name->Value());
-                }
+            if (strcmp(item->name, "country") == 0) {
+                country = parseCountryCode(mediaDbText(item));
             }
-            if (strcmp(item->Value(), "year") == 0) {
-                TiXmlNode* name = item->FirstChild();
-                if (name != NULL) {
-                    year = name->Value();
-                }
+            if (strcmp(item->name, "year") == 0) {
+                year = mediaDbText(item);
             }
         }
 
-        for (item = sw->FirstChildElement(); item != NULL; item = item->NextSiblingElement()) {
-            if (strcmp(item->Value(), "dump") != 0) {
+        for (item = sw->children; item != NULL; item = item->next) {
+            if (strcmp(item->name, "dump") != 0) {
                 continue;
             }
-            
+
             string start;
 
-            for (TiXmlElement* dmp = item->FirstChildElement(); dmp != NULL; dmp = dmp->NextSiblingElement()) {
-                if (strcmp(dmp->Value(), "group") == 0) {
-                    for (TiXmlElement* it = dmp->FirstChildElement(); it != NULL; it = it->NextSiblingElement()) {
+            for (rxml_node_t* dmp = item->children; dmp != NULL; dmp = dmp->next) {
+                if (strcmp(dmp->name, "group") == 0) {
+                    for (rxml_node_t* it = dmp->children; it != NULL; it = it->next) {
                         mediaDbAddDump(it, title, company, country, year, system);
                     }
                     continue;
@@ -552,6 +569,10 @@ static void mediaDbAddFromXmlFile(const char* fileName)
             }
         }
     }
+
+    /* Every value the walk kept was copied into a MediaType, so the
+       document and the buffer it owns go now. */
+    rxml_free_document(doc);
 }
 
 extern MediaType* mediaDbLookup(MediaDb* mediaDb, const void *buffer, int size)
